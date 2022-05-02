@@ -294,6 +294,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hash32"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2baa98978c170759522ad6ebb567aeb29a62e1867551f39ae2e5b749fbd5cc21"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "hash32-derive"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -311,7 +320,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d076121838e03f862871315477528debffdb7462fb229216ecef91b1a3eb31eb"
 dependencies = [
  "atomic-polyfill",
- "hash32",
+ "hash32 0.2.1",
  "spin",
  "stable_deref_trait",
 ]
@@ -708,12 +717,12 @@ checksum = "6be90410d4772074ea49525e2e753b65920b94b57eee21a6ef7b6a6fe6296245"
 
 [[package]]
 name = "usbd-human-interface-device"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "delegate",
  "embedded-time",
  "frunk",
- "hash32",
+ "hash32 0.3.0",
  "hash32-derive",
  "heapless",
  "log",
