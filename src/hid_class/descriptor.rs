@@ -10,6 +10,10 @@ pub enum InterfaceProtocol {
     None = 0x00,
     Keyboard = 0x01,
     Mouse = 0x02,
+    Joystick = 0x04,
+    Gamepad = 0x05,
+    Generic = 0x06,
+    Vendor = 0xFF,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PrimitiveEnum)]
