@@ -1,3 +1,4 @@
+cargo-features = ["resolver"]
 [package]
 name = "usbd-human-interface-device"
 version = "0.1.1"
