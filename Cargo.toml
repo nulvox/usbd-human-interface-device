@@ -2,7 +2,7 @@ cargo-features = ["resolver"]
 [package]
 name = "usbd-human-interface-device"
 version = "0.1.1"
-# edition = "2021"
+edition = "2021"
 description = "Batteries included embedded USB HID library for usb-device. Includes concrete Keyboard (boot and NKRO), Mouse and Consumer Control implementations as well as support for building your own HID classes."
 keywords = [ "hid", "usb-device", "usb", "keyboard", "mouse"]
 categories = ["no-std", "embedded"]
@@ -13,8 +13,8 @@ documentation = "https://docs.rs/usbd-human-interface-device"
 license = "MIT"
 
 [dependencies]
-# usb-device = "0.2"
-usb-device = { git = "https://github.com/agausmann/usb-device.git" }
+usb-device = "0.2"
+# usb-device = { git = "https://github.com/agausmann/usb-device.git" }
 embedded-time = "0.12"
 log = { version = "0.4", default-features = false }
 packed_struct = { version = "0.10", default-features = false }
