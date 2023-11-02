@@ -3,7 +3,6 @@
 
 use bsp::entry;
 use bsp::hal;
-use defmt::*;
 use defmt_rtt as _;
 use embedded_hal::digital::v2::*;
 use embedded_hal::prelude::*;
@@ -13,10 +12,15 @@ use panic_probe as _;
 #[allow(clippy::wildcard_imports)]
 use usb_device::class_prelude::*;
 use usb_device::prelude::*;
-use usbd_human_interface_device::device::mouse::BootMouseReport;
+use usbd_human_interface_device::device::mouse::AbsoluteWheelMouseReport;
 use usbd_human_interface_device::prelude::*;
 
 use rp_pico as bsp;
+
+/// Note - absolute pointer support is relatively uncommon. This has been tested on Windows 11
+/// Other operating systems may not natively support this device
+///
+/// Windows only natively supports absolute pointer devices on the primary display.
 
 #[entry]
 fn main() -> ! {
@@ -45,8 +49,6 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    info!("Starting");
-
     //USB
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
@@ -57,20 +59,20 @@ fn main() -> ! {
     ));
 
     let mut mouse = UsbHidClassBuilder::new()
-        .add_device(usbd_human_interface_device::device::mouse::BootMouseConfig::default())
+        .add_device(usbd_human_interface_device::device::mouse::AbsoluteWheelMouseConfig::default())
         .build(&usb_bus);
 
     //https://pid.codes
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x1209, 0x0001))
         .manufacturer("usbd-human-interface-device")
-        .product("Boot Mouse")
+        .product("Absolute Mouse")
         .serial_number("TEST")
         .build();
 
     //GPIO pins
     let mut led_pin = pins.gpio13.into_push_pull_output();
 
-    let input_pins: [&dyn InputPin<Error = core::convert::Infallible>; 7] = [
+    let input_pins: [&dyn InputPin<Error = core::convert::Infallible>; 11] = [
         &pins.gpio1.into_pull_up_input(),
         &pins.gpio2.into_pull_up_input(),
         &pins.gpio3.into_pull_up_input(),
@@ -78,12 +80,16 @@ fn main() -> ! {
         &pins.gpio5.into_pull_up_input(),
         &pins.gpio6.into_pull_up_input(),
         &pins.gpio7.into_pull_up_input(),
+        &pins.gpio8.into_pull_up_input(),
+        &pins.gpio9.into_pull_up_input(),
+        &pins.gpio10.into_pull_up_input(),
+        &pins.gpio11.into_pull_up_input(),
     ];
 
     led_pin.set_low().ok();
 
     let mut last_buttons = 0;
-    let mut report = BootMouseReport::default();
+    let mut report = AbsoluteWheelMouseReport::default();
 
     let mut input_count_down = timer.count_down();
     input_count_down.start(10.millis());
@@ -93,13 +99,14 @@ fn main() -> ! {
         if input_count_down.wait().is_ok() {
             report = update_report(report, &input_pins);
 
-            //Only write a report if the mouse is moving or buttons change
-            if report.buttons != last_buttons || report.x != 0 || report.y != 0 {
+            //Only write a report if the mouse has moved or buttons change
+            if report.buttons != last_buttons || report.x != 0 || report.y != 0 || report.wheel != 0
+            {
                 match mouse.device().write_report(&report) {
                     Err(UsbHidError::WouldBlock) => {}
                     Ok(_) => {
                         last_buttons = report.buttons;
-                        report = BootMouseReport::default();
+                        report = AbsoluteWheelMouseReport::default()
                     }
                     Err(e) => {
                         core::panic!("Failed to write mouse report: {:?}", e)
@@ -113,9 +120,9 @@ fn main() -> ! {
 }
 
 fn update_report(
-    mut report: BootMouseReport,
-    pins: &[&dyn InputPin<Error = core::convert::Infallible>; 7],
-) -> BootMouseReport {
+    mut report: AbsoluteWheelMouseReport,
+    pins: &[&dyn InputPin<Error = core::convert::Infallible>; 11],
+) -> AbsoluteWheelMouseReport {
     if pins[0].is_low().unwrap() {
         report.buttons |= 0x1; //Left
     } else {
@@ -132,16 +139,37 @@ fn update_report(
         report.buttons &= 0xFF - 0x2;
     }
     if pins[3].is_low().unwrap() {
-        report.y = i8::saturating_add(report.y, -10); //Up
+        report.wheel = i8::saturating_add(report.wheel, -1);
     }
     if pins[4].is_low().unwrap() {
-        report.x = i8::saturating_add(report.x, -10); //Left
+        report.wheel = i8::saturating_add(report.wheel, 1);
     }
+
     if pins[5].is_low().unwrap() {
-        report.y = i8::saturating_add(report.y, 10); //Down
+        report.x = 1;
+        report.y = 1;
     }
+
     if pins[6].is_low().unwrap() {
-        report.x = i8::saturating_add(report.x, 10); //Right
+        report.x = u16::MAX / 4;
+        report.y = u16::MAX / 4;
+    }
+
+    if pins[7].is_low().unwrap() {
+        report.x = u16::MAX / 2;
+        report.y = u16::MAX / 2;
+    }
+    if pins[8].is_low().unwrap() {
+        report.x = u16::MAX;
+        report.y = u16::MAX;
+    }
+    if pins[9].is_low().unwrap() {
+        report.x = u16::MAX / 4;
+        report.y = 0;
+    }
+    if pins[10].is_low().unwrap() {
+        report.x = 0;
+        report.y = u16::MAX / 4;
     }
 
     report

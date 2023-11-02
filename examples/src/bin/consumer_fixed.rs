@@ -1,21 +1,23 @@
 #![no_std]
 #![no_main]
 
-use adafruit_macropad::hal;
-use cortex_m_rt::entry;
+use bsp::entry;
+use bsp::hal;
+use defmt::*;
+use defmt_rtt as _;
 use embedded_hal::digital::v2::*;
 use embedded_hal::prelude::*;
-use embedded_time::duration::Milliseconds;
-use embedded_time::rate::Hertz;
+use fugit::ExtU32;
 use hal::pac;
-use hal::Clock;
-use log::*;
+use panic_probe as _;
+
+#[allow(clippy::wildcard_imports)]
 use usb_device::class_prelude::*;
 use usb_device::prelude::*;
 use usbd_human_interface_device::device::consumer::FixedFunctionReport;
 use usbd_human_interface_device::prelude::*;
 
-use usbd_human_interface_device_example_rp2040::*;
+use rp_pico as bsp;
 
 #[entry]
 fn main() -> ! {
@@ -23,7 +25,7 @@ fn main() -> ! {
 
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
     let clocks = hal::clocks::init_clocks_and_plls(
-        XTAL_FREQ_HZ,
+        bsp::XOSC_CRYSTAL_FREQ,
         pac.XOSC,
         pac.CLOCKS,
         pac.PLL_SYS,
@@ -44,32 +46,7 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    //display
-    // These are implicitly used by the spi driver if they are in the correct mode
-    let _spi_sclk = pins.gpio26.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_mosi = pins.gpio27.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_miso = pins.gpio28.into_mode::<hal::gpio::FunctionSpi>();
-    let spi = hal::spi::Spi::<_, _, 8>::new(pac.SPI1);
-
-    // Display control pins
-    let oled_dc = pins.gpio24.into_push_pull_output();
-    let oled_cs = pins.gpio22.into_push_pull_output();
-    let mut oled_reset = pins.gpio23.into_push_pull_output();
-
-    oled_reset.set_high().ok(); //disable screen reset
-
-    // Exchange the uninitialised SPI driver for an initialised one
-    let oled_spi = spi.init(
-        &mut pac.RESETS,
-        clocks.peripheral_clock.freq(),
-        Hertz::new(16_000_000u32),
-        &embedded_hal::spi::MODE_0,
-    );
-
-    let button = pins.gpio0.into_pull_up_input();
-
-    init_logger(oled_spi, oled_dc.into(), oled_cs.into(), &button);
-    info!("Starting up...");
+    info!("Starting");
 
     //USB
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
@@ -81,8 +58,8 @@ fn main() -> ! {
     ));
 
     let mut consumer = UsbHidClassBuilder::new()
-        .add_interface(
-            usbd_human_interface_device::device::consumer::ConsumerControlFixedInterface::default_config(),
+        .add_device(
+            usbd_human_interface_device::device::consumer::ConsumerControlFixedConfig::default(),
         )
         .build(&usb_bus);
     //https://pid.codes
@@ -90,13 +67,12 @@ fn main() -> ! {
         .manufacturer("usbd-human-interface-device")
         .product("Consumer Control")
         .serial_number("TEST")
-        .supports_remote_wakeup(false)
         .build();
 
     //GPIO pins
     let mut led_pin = pins.gpio13.into_push_pull_output();
 
-    let keys: &[&dyn InputPin<Error = core::convert::Infallible>] = &[
+    let input_pins: [&dyn InputPin<Error = core::convert::Infallible>; 7] = [
         &pins.gpio1.into_pull_up_input(),
         &pins.gpio2.into_pull_up_input(),
         &pins.gpio3.into_pull_up_input(),
@@ -104,59 +80,44 @@ fn main() -> ! {
         &pins.gpio5.into_pull_up_input(),
         &pins.gpio6.into_pull_up_input(),
         &pins.gpio7.into_pull_up_input(),
-        &pins.gpio8.into_pull_up_input(),
-        &pins.gpio9.into_pull_up_input(),
-        &pins.gpio10.into_pull_up_input(),
-        &pins.gpio11.into_pull_up_input(),
-        &pins.gpio12.into_pull_up_input(),
     ];
 
     led_pin.set_low().ok();
 
     let mut input_count_down = timer.count_down();
-    input_count_down.start(Milliseconds(50));
+    input_count_down.start(50.millis());
 
-    let mut display_poll = timer.count_down();
-    display_poll.start(DISPLAY_POLL);
-
-    let mut last = get_report(keys);
+    let mut last = get_report(&input_pins);
 
     loop {
-        if button.is_low().unwrap() {
-            hal::rom_data::reset_to_usb_boot(0x1 << 13, 0x0);
-        }
-        //Poll the keys every 10ms
+        //Poll every 10ms
         if input_count_down.wait().is_ok() {
-            let report = get_report(keys);
+            let report = get_report(&input_pins);
             if report != last {
-                match consumer.interface().write_report(&report) {
+                match consumer.device().write_report(&report) {
                     Err(UsbError::WouldBlock) => {}
                     Ok(_) => {
                         last = report;
                     }
                     Err(e) => {
-                        panic!("Failed to write consumer report: {:?}", e)
+                        core::panic!("Failed to write consumer report: {:?}", e)
                     }
                 }
             }
         }
 
-        if usb_dev.poll(&mut [&mut consumer]) {}
-
-        if display_poll.wait().is_ok() {
-            log::logger().flush();
-        }
+        usb_dev.poll(&mut [&mut consumer]);
     }
 }
 
-fn get_report(keys: &[&dyn InputPin<Error = core::convert::Infallible>]) -> FixedFunctionReport {
+fn get_report(pins: &[&dyn InputPin<Error = core::convert::Infallible>; 7]) -> FixedFunctionReport {
     FixedFunctionReport {
-        next: keys[0].is_low().unwrap(),
-        previous: keys[1].is_low().unwrap(),
-        stop: keys[2].is_low().unwrap(),
-        play_pause: keys[3].is_low().unwrap(),
-        mute: keys[4].is_low().unwrap(),
-        volume_increment: keys[5].is_low().unwrap(),
-        volume_decrement: keys[6].is_low().unwrap(),
+        next: pins[0].is_low().unwrap(),
+        previous: pins[1].is_low().unwrap(),
+        stop: pins[2].is_low().unwrap(),
+        play_pause: pins[3].is_low().unwrap(),
+        mute: pins[4].is_low().unwrap(),
+        volume_increment: pins[5].is_low().unwrap(),
+        volume_decrement: pins[6].is_low().unwrap(),
     }
 }
