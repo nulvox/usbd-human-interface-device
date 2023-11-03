@@ -13,8 +13,8 @@ documentation = "https://docs.rs/usbd-human-interface-device"
 license = "MIT"
 
 [dependencies]
-# usb-device = "0.2"
-usb-device = { git = "https://github.com/agausmann/usb-device.git" }
+usb-device = "0.2"
+# usb-device = { git = "https://github.com/agausmann/usb-device.git" }
 embedded-time = "0.12"
 log = { version = "0.4", optional = true }
 defmt = { version = "0.3", optional = true }
