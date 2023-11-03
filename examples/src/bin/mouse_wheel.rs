@@ -1,21 +1,21 @@
 #![no_std]
 #![no_main]
 
-use adafruit_macropad::hal;
-use cortex_m_rt::entry;
+use bsp::entry;
+use bsp::hal;
+use defmt_rtt as _;
 use embedded_hal::digital::v2::*;
 use embedded_hal::prelude::*;
-use embedded_time::duration::Milliseconds;
-use embedded_time::rate::Hertz;
+use fugit::ExtU32;
 use hal::pac;
-use hal::Clock;
-use log::*;
+use panic_probe as _;
+#[allow(clippy::wildcard_imports)]
 use usb_device::class_prelude::*;
 use usb_device::prelude::*;
 use usbd_human_interface_device::device::mouse::WheelMouseReport;
 use usbd_human_interface_device::prelude::*;
 
-use usbd_human_interface_device_example_rp2040::*;
+use rp_pico as bsp;
 
 #[entry]
 fn main() -> ! {
@@ -23,7 +23,7 @@ fn main() -> ! {
 
     let mut watchdog = hal::Watchdog::new(pac.WATCHDOG);
     let clocks = hal::clocks::init_clocks_and_plls(
-        XTAL_FREQ_HZ,
+        bsp::XOSC_CRYSTAL_FREQ,
         pac.XOSC,
         pac.CLOCKS,
         pac.PLL_SYS,
@@ -44,33 +44,6 @@ fn main() -> ! {
         &mut pac.RESETS,
     );
 
-    //display
-    // These are implicitly used by the spi driver if they are in the correct mode
-    let _spi_sclk = pins.gpio26.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_mosi = pins.gpio27.into_mode::<hal::gpio::FunctionSpi>();
-    let _spi_miso = pins.gpio28.into_mode::<hal::gpio::FunctionSpi>();
-    let spi = hal::spi::Spi::<_, _, 8>::new(pac.SPI1);
-
-    // Display control pins
-    let oled_dc = pins.gpio24.into_push_pull_output();
-    let oled_cs = pins.gpio22.into_push_pull_output();
-    let mut oled_reset = pins.gpio23.into_push_pull_output();
-
-    oled_reset.set_high().ok(); //disable screen reset
-
-    // Exchange the uninitialised SPI driver for an initialised one
-    let oled_spi = spi.init(
-        &mut pac.RESETS,
-        clocks.peripheral_clock.freq(),
-        Hertz::new(16_000_000u32),
-        &embedded_hal::spi::MODE_0,
-    );
-
-    let button = pins.gpio0.into_pull_up_input();
-
-    init_logger(oled_spi, oled_dc.into(), oled_cs.into(), &button);
-    info!("Starting up...");
-
     //USB
     let usb_bus = UsbBusAllocator::new(hal::usb::UsbBus::new(
         pac.USBCTRL_REGS,
@@ -81,9 +54,7 @@ fn main() -> ! {
     ));
 
     let mut mouse = UsbHidClassBuilder::new()
-        .add_interface(
-            usbd_human_interface_device::device::mouse::WheelMouseInterface::default_config(),
-        )
+        .add_device(usbd_human_interface_device::device::mouse::WheelMouseConfig::default())
         .build(&usb_bus);
 
     //https://pid.codes
@@ -91,13 +62,12 @@ fn main() -> ! {
         .manufacturer("usbd-human-interface-device")
         .product("Wheel Mouse")
         .serial_number("TEST")
-        .supports_remote_wakeup(false)
         .build();
 
     //GPIO pins
     let mut led_pin = pins.gpio13.into_push_pull_output();
 
-    let keys: &[&dyn InputPin<Error = core::convert::Infallible>] = &[
+    let input_pins: [&dyn InputPin<Error = core::convert::Infallible>; 11] = [
         &pins.gpio1.into_pull_up_input(),
         &pins.gpio2.into_pull_up_input(),
         &pins.gpio3.into_pull_up_input(),
@@ -109,7 +79,6 @@ fn main() -> ! {
         &pins.gpio9.into_pull_up_input(),
         &pins.gpio10.into_pull_up_input(),
         &pins.gpio11.into_pull_up_input(),
-        &pins.gpio12.into_pull_up_input(),
     ];
 
     led_pin.set_low().ok();
@@ -118,19 +87,12 @@ fn main() -> ! {
     let mut report = WheelMouseReport::default();
 
     let mut input_count_down = timer.count_down();
-    input_count_down.start(Milliseconds(10));
-
-    let mut display_poll = timer.count_down();
-    display_poll.start(DISPLAY_POLL);
+    input_count_down.start(10.millis());
 
     loop {
-        if button.is_low().unwrap() {
-            hal::rom_data::reset_to_usb_boot(0x1 << 13, 0x0);
-        }
-
-        //Poll the keys every 10ms
+        //Poll every 10ms
         if input_count_down.wait().is_ok() {
-            report = update_report(report, keys);
+            report = update_report(report, &input_pins);
 
             //Only write a report if the mouse is moving or buttons change
             if report.buttons != last_buttons
@@ -139,69 +101,64 @@ fn main() -> ! {
                 || report.vertical_wheel != 0
                 || report.horizontal_wheel != 0
             {
-                match mouse.interface().write_report(&report) {
+                match mouse.device().write_report(&report) {
                     Err(UsbHidError::WouldBlock) => {}
                     Ok(_) => {
                         last_buttons = report.buttons;
                         report = WheelMouseReport::default()
                     }
                     Err(e) => {
-                        panic!("Failed to write mouse report: {:?}", e)
+                        core::panic!("Failed to write mouse report: {:?}", e)
                     }
                 }
             }
         }
 
         if usb_dev.poll(&mut [&mut mouse]) {}
-
-        if display_poll.wait().is_ok() {
-            log::logger().flush();
-        }
     }
 }
 
 fn update_report(
     mut report: WheelMouseReport,
-    keys: &[&dyn InputPin<Error = core::convert::Infallible>],
+    pins: &[&dyn InputPin<Error = core::convert::Infallible>; 11],
 ) -> WheelMouseReport {
-    if keys[0].is_low().unwrap() {
+    if pins[0].is_low().unwrap() {
         report.buttons |= 0x1; //Left
     } else {
         report.buttons &= 0xFF - 0x1;
     }
-    if keys[1].is_low().unwrap() {
+    if pins[1].is_low().unwrap() {
         report.buttons |= 0x4; //Middle
     } else {
         report.buttons &= 0xFF - 0x4;
     }
-    if keys[2].is_low().unwrap() {
+    if pins[2].is_low().unwrap() {
         report.buttons |= 0x2; //Right
     } else {
         report.buttons &= 0xFF - 0x2;
     }
-    if keys[3].is_low().unwrap() {
+    if pins[3].is_low().unwrap() {
         report.vertical_wheel = i8::saturating_add(report.vertical_wheel, -1);
     }
-    if keys[4].is_low().unwrap() {
+    if pins[4].is_low().unwrap() {
         report.y = i8::saturating_add(report.y, -10); //Up
     }
-    if keys[5].is_low().unwrap() {
+    if pins[5].is_low().unwrap() {
         report.vertical_wheel = i8::saturating_add(report.vertical_wheel, 1);
     }
-    if keys[6].is_low().unwrap() {
+    if pins[6].is_low().unwrap() {
         report.x = i8::saturating_add(report.x, -10); //Left
     }
-    if keys[7].is_low().unwrap() {
+    if pins[7].is_low().unwrap() {
         report.y = i8::saturating_add(report.y, 10); //Down
     }
-    if keys[8].is_low().unwrap() {
+    if pins[8].is_low().unwrap() {
         report.x = i8::saturating_add(report.x, 10); //Right
     }
-    if keys[9].is_low().unwrap() {
+    if pins[9].is_low().unwrap() {
         report.horizontal_wheel = i8::saturating_add(report.horizontal_wheel, -1);
     }
-    if keys[10].is_low().unwrap() {}
-    if keys[11].is_low().unwrap() {
+    if pins[10].is_low().unwrap() {
         report.horizontal_wheel = i8::saturating_add(report.horizontal_wheel, 1);
     }
 

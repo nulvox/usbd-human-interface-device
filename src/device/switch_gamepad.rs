@@ -103,9 +103,9 @@ impl<'a, B: UsbBus> SwitchGamepadInterface<'a, B> {
             RawInterfaceBuilder::new(SWITCH_GAMEPAD_REPORT_DESCRIPTOR)
                 .boot_device(InterfaceProtocol::Gamepad)
                 .description("Switch Gamepad")
-                .idle_default(Milliseconds(0))
+                .idle_default(Milliseconds(10))
                 .unwrap()
-                .in_endpoint(UsbPacketSize::Bytes8, Milliseconds(10))
+                .in_endpoint(UsbPacketSize::Bytes8, Milliseconds(1))
                 .unwrap()
                 .without_out_endpoint()
                 .build(),

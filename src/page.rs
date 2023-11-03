@@ -3,9 +3,8 @@
 //! See Universal Serial Bus (USB) HID Usage Tables Version 1.12
 //! <https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>
 
-use hash32::{Hash, Hasher};
-use num_enum::FromPrimitive;
-use num_enum::IntoPrimitive;
+use core::hash::Hash;
+use num_enum::{FromPrimitive, IntoPrimitive};
 use packed_struct::prelude::*;
 
 // Notes for converting .upg files to rust enum
@@ -19,6 +18,7 @@ use packed_struct::prelude::*;
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
 /// Section 11 LED Page (0x08)
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
     Debug,
     Copy,
@@ -120,20 +120,11 @@ impl Default for Leds {
     }
 }
 
-impl Hash for Leds {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u8 = (*self).into();
-        state.write(&x.to_le_bytes());
-    }
-}
-
 /// Consumer usage page
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
 /// Section 15 Consumer Page (0x0C)
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
     Debug,
     Copy,
@@ -540,22 +531,23 @@ impl Default for Consumer {
     }
 }
 
-impl Hash for Consumer {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u16 = (*self).into();
-        state.write(&x.to_le_bytes());
-    }
-}
-
 /// Generic Desktop usage page
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
 /// Section 4 Desktop Page (0x01)
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, PrimitiveEnum, IntoPrimitive, FromPrimitive,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    PrimitiveEnum,
+    IntoPrimitive,
+    FromPrimitive,
 )]
 #[repr(u8)]
 pub enum Desktop {
@@ -626,22 +618,23 @@ impl Default for Desktop {
     }
 }
 
-impl Hash for Desktop {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u8 = (*self).into();
-        state.write(&x.to_le_bytes());
-    }
-}
-
 /// Game Controls usage page
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
 /// Section 4 Game Controls Page (0x05)
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, PrimitiveEnum, IntoPrimitive, FromPrimitive,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    Hash,
+    PartialOrd,
+    PrimitiveEnum,
+    IntoPrimitive,
+    FromPrimitive,
 )]
 #[repr(u8)]
 pub enum Game {
@@ -685,16 +678,6 @@ impl Default for Game {
     }
 }
 
-impl Hash for Game {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u8 = (*self).into();
-        state.write(&x.to_le_bytes());
-    }
-}
-
 /// Keyboard usage page
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
@@ -702,8 +685,19 @@ impl Hash for Game {
 ///
 /// Naming from the specification has been preserved where possible but some names
 /// have been shortened or transliterated to be valid rust identifiers
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, PrimitiveEnum, IntoPrimitive, FromPrimitive,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    PrimitiveEnum,
+    IntoPrimitive,
+    FromPrimitive,
 )]
 #[repr(u8)]
 pub enum Keyboard {
@@ -891,22 +885,23 @@ impl Default for Keyboard {
     }
 }
 
-impl Hash for Keyboard {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u8 = (*self).into();
-        state.write(&x.to_le_bytes());
-    }
-}
-
 /// Simulation Controls usage page
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
 /// Section 5 Simulation Controls Page (0x02)
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, PrimitiveEnum, IntoPrimitive, FromPrimitive,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    Hash,
+    PartialOrd,
+    PrimitiveEnum,
+    IntoPrimitive,
+    FromPrimitive,
 )]
 #[repr(u8)]
 pub enum Simulation {
@@ -975,22 +970,23 @@ impl Default for Simulation {
     }
 }
 
-impl Hash for Simulation {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u8 = (*self).into();
-        state.write(&x.to_le_bytes());
-    }
-}
-
 /// Telephony Device usage page
 ///
 /// See [Universal Serial Bus (USB) HID Usage Tables Version 1.12](<https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf>):
 /// Section 14 Telephony Device  Page (0x0B)
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(
-    Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, PrimitiveEnum, IntoPrimitive, FromPrimitive,
+    Debug,
+    Copy,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    PrimitiveEnum,
+    IntoPrimitive,
+    FromPrimitive,
 )]
 #[repr(u8)]
 pub enum Telephony {
@@ -1071,15 +1067,5 @@ pub enum Telephony {
 impl Default for Telephony {
     fn default() -> Self {
         Self::Unassigned
-    }
-}
-
-impl Hash for Telephony {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher,
-    {
-        let x: u8 = (*self).into();
-        state.write(&x.to_le_bytes());
     }
 }

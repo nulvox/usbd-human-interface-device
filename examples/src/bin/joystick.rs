@@ -13,7 +13,7 @@ use panic_probe as _;
 #[allow(clippy::wildcard_imports)]
 use usb_device::class_prelude::*;
 use usb_device::prelude::*;
-use usbd_human_interface_device::device::mouse::BootMouseReport;
+use usbd_human_interface_device::device::joystick::JoystickReport;
 use usbd_human_interface_device::prelude::*;
 
 use rp_pico as bsp;
@@ -56,21 +56,22 @@ fn main() -> ! {
         &mut pac.RESETS,
     ));
 
-    let mut mouse = UsbHidClassBuilder::new()
-        .add_device(usbd_human_interface_device::device::mouse::BootMouseConfig::default())
+    let mut joy = UsbHidClassBuilder::new()
+        .add_device(usbd_human_interface_device::device::joystick::JoystickConfig::default())
         .build(&usb_bus);
 
     //https://pid.codes
     let mut usb_dev = UsbDeviceBuilder::new(&usb_bus, UsbVidPid(0x1209, 0x0001))
         .manufacturer("usbd-human-interface-device")
-        .product("Boot Mouse")
+        .product("Rusty joystick")
         .serial_number("TEST")
         .build();
 
     //GPIO pins
     let mut led_pin = pins.gpio13.into_push_pull_output();
 
-    let input_pins: [&dyn InputPin<Error = core::convert::Infallible>; 7] = [
+    let input_pins: [&dyn InputPin<Error = core::convert::Infallible>; 12] = [
+        &pins.gpio0.into_pull_up_input(),
         &pins.gpio1.into_pull_up_input(),
         &pins.gpio2.into_pull_up_input(),
         &pins.gpio3.into_pull_up_input(),
@@ -78,71 +79,62 @@ fn main() -> ! {
         &pins.gpio5.into_pull_up_input(),
         &pins.gpio6.into_pull_up_input(),
         &pins.gpio7.into_pull_up_input(),
+        &pins.gpio8.into_pull_up_input(),
+        &pins.gpio9.into_pull_up_input(),
+        &pins.gpio10.into_pull_up_input(),
+        &pins.gpio11.into_pull_up_input(),
     ];
 
     led_pin.set_low().ok();
-
-    let mut last_buttons = 0;
-    let mut report = BootMouseReport::default();
 
     let mut input_count_down = timer.count_down();
     input_count_down.start(10.millis());
 
     loop {
-        //Poll every 10ms
+        // Poll every 10ms
         if input_count_down.wait().is_ok() {
-            report = update_report(report, &input_pins);
-
-            //Only write a report if the mouse is moving or buttons change
-            if report.buttons != last_buttons || report.x != 0 || report.y != 0 {
-                match mouse.device().write_report(&report) {
-                    Err(UsbHidError::WouldBlock) => {}
-                    Ok(_) => {
-                        last_buttons = report.buttons;
-                        report = BootMouseReport::default();
-                    }
-                    Err(e) => {
-                        core::panic!("Failed to write mouse report: {:?}", e)
-                    }
+            match joy.device().write_report(&get_report(&input_pins)) {
+                Err(UsbHidError::WouldBlock) => {}
+                Ok(_) => {}
+                Err(e) => {
+                    core::panic!("Failed to write joystick report: {:?}", e)
                 }
             }
         }
 
-        if usb_dev.poll(&mut [&mut mouse]) {}
+        if usb_dev.poll(&mut [&mut joy]) {}
     }
 }
 
-fn update_report(
-    mut report: BootMouseReport,
-    pins: &[&dyn InputPin<Error = core::convert::Infallible>; 7],
-) -> BootMouseReport {
-    if pins[0].is_low().unwrap() {
-        report.buttons |= 0x1; //Left
-    } else {
-        report.buttons &= 0xFF - 0x1;
-    }
-    if pins[1].is_low().unwrap() {
-        report.buttons |= 0x4; //Middle
-    } else {
-        report.buttons &= 0xFF - 0x4;
-    }
-    if pins[2].is_low().unwrap() {
-        report.buttons |= 0x2; //Right
-    } else {
-        report.buttons &= 0xFF - 0x2;
-    }
-    if pins[3].is_low().unwrap() {
-        report.y = i8::saturating_add(report.y, -10); //Up
-    }
-    if pins[4].is_low().unwrap() {
-        report.x = i8::saturating_add(report.x, -10); //Left
-    }
-    if pins[5].is_low().unwrap() {
-        report.y = i8::saturating_add(report.y, 10); //Down
-    }
-    if pins[6].is_low().unwrap() {
-        report.x = i8::saturating_add(report.x, 10); //Right
+fn get_report(pins: &[&dyn InputPin<Error = core::convert::Infallible>; 12]) -> JoystickReport {
+    // Read out 8 buttons first
+    let mut buttons = 0;
+    for (idx, &pin) in pins[..8].iter().enumerate() {
+        if pin.is_low().unwrap() {
+            buttons |= 1 << idx;
+        }
     }
 
-    report
+    // We're using digital switches in a D-PAD style configuration
+    //    10
+    //  8    9
+    //    11
+    // These are mapped to the limits of an axis
+    let x = if pins[8].is_low().unwrap() {
+        -127 // left
+    } else if pins[9].is_low().unwrap() {
+        127 // right
+    } else {
+        0 // center
+    };
+
+    let y = if pins[10].is_low().unwrap() {
+        -127 // up
+    } else if pins[11].is_low().unwrap() {
+        127 // down
+    } else {
+        0 // center
+    };
+
+    JoystickReport { buttons, x, y }
 }
